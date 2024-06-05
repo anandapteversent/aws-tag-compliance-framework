@@ -1,7 +1,8 @@
-# Create a shared AWS System Manager Automation runbook from the Management Account.
-# Share with member accounts.
-# Combine AWSS Config required-tags rule and the remediation actoun using an automation runbook into an AWS config conformance pack.
-# Deploy it through AWS organiations to selected AWS accounts.
+# High Level Steps
+  - Create a shared AWS System Manager Automation runbook from the Management Account.
+  - Share with member accounts.
+  - Combine AWSS Config required-tags rule and the remediation actoun using an automation runbook into an AWS config conformance pack.
+  - Deploy it through AWS organiations to selected AWS accounts.
 
 # Pre-Requisite
   - Enable AWS Config in all accounts in AWS organization. Using thq cuik setup below - 
