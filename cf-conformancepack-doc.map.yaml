@@ -1,0 +1,136 @@
+Parameters:
+  ConformancePackName:
+    Description: The name intented to use when creating the organization conformance pack.
+    Default: 'TagRemediationConformancePack'
+    Type: String
+
+Mappings:
+  RequiredTags:
+    tag1:
+      key: businessOwner
+      value: anand.apte
+    tag2: 
+      Key: userName
+      value: anand.apte  
+    tag3: 
+      Key: businessEntity
+      value: test  
+
+Resources:
+  ResourceTaggingCheck:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: required-tags
+      Description: Check resources against the required tags
+      Source:
+        Owner: AWS
+        SourceIdentifier: REQUIRED_TAGS
+      InputParameters:
+        tag1Key: !FindInMap [RequiredTags, tag1, key]
+        tag1Value: !FindInMap [RequiredTags, tag1, value]
+        tag2Key: !FindInMap [RequiredTags, tag2, key]
+        tag2Value: !FindInMap [RequiredTags, tag2, value]
+        tag3Key: !FindInMap [RequiredTags, tag3, key]
+        tag3Value: !FindInMap [RequiredTags, tag3, value]
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::Instance
+          - AWS::S3::Bucket
+          - AWS::RDS::DBInstance
+          - AWS::DynamoDB::Table
+          - AWS::Lambda::Function
+          - AWS::Redshift::Cluster
+          - AWS::EBS::Volume
+          - AWS::ElasticLoadBalancing::LoadBalancer
+          - AWS::ElasticLoadBalancingV2::LoadBalancer
+          - AWS::ECS::Cluster
+          - AWS::ECS::Service
+          - AWS::ECS::TaskDefinition
+          - AWS::EMR::Cluster
+          - AWS::SNS::Topic
+          - AWS::SQS::Queue
+          - AWS::SSM::ManagedInstanceInventory
+          - AWS::Kinesis::Stream
+          - AWS::ApiGateway::RestApi
+          - AWS::CloudFormation::Stack
+          - AWS::CloudWatch::Alarm
+          - AWS::CodeBuild::Project
+          - AWS::CodePipeline::Pipeline
+          - AWS::EFS::FileSystem
+          - AWS::MSK::Cluster
+          - AWS::StepFunctions::Activity
+          - AWS::StepFunctions::StateMachine
+          - AWS::SecretsManager::Secret
+          - AWS::ServiceCatalog::CloudFormationProvisionedProduct
+          - AWS::ServiceCatalog::CloudFormationProduct
+          - AWS::ServiceCatalog::Portfolio
+          - AWS::CloudFront::Distribution
+          - AWS::GlobalAccelerator::Accelerator
+          - AWS::GlobalAccelerator::EndpointGroup
+          - AWS::GlobalAccelerator::Listener
+          - AWS::SageMaker::NotebookInstance
+          - AWS::CertificateManager::Certificate
+          - AWS::Shield::Protection
+          - AWS::WAF::RateBasedRule
+          - AWS::WAF::Rule
+          - AWS::WAF::RuleGroup
+          - AWS::WAF::WebACL
+          - AWS::WAFRegional::RateBasedRule
+          - AWS::WAFRegional::Rule
+          - AWS::WAFRegional::RuleGroup
+          - AWS::WAFRegional::WebACL
+          - AWS::XRay::EncryptionConfig
+          - AWS::Backup::BackupPlan
+          - AWS::Backup::BackupSelection
+          - AWS::Backup::BackupVault
+          - AWS::Backup::RecoveryPoint
+          - AWS::ECR::Repository
+          - AWS::GuardDuty::Detector
+          - AWS::GuardDuty::IPSet
+          - AWS::GuardDuty::ThreatIntelSet
+          - AWS::EC2::Host
+          - AWS::EC2::SecurityGroup
+          - AWS::IAM::Role
+          - AWS::KMS::Key
+          - AWS::QLDB::Ledger
+          - AWS::RAM::ResourceShare
+          - AWS::SNS::Topic
+          - AWS::SQS::Queue
+
+  MapTaggingRemediation:
+    DependsOn: ResourceTaggingCheck
+    Type: 'AWS::Config::RemediationConfiguration'
+    Properties:
+      ConfigRuleName: required-tags
+      TargetId: !Sub 'arn:${AWS::Partition}:ssm:ap-southeast-2:084245194039:document/SsmDocumentTagRemediation'
+      TargetType: 'SSM_DOCUMENT'
+      Parameters:
+        RequiredTags:
+          StaticValue:
+            Values:
+              - !Sub
+                - '{"${tag1key}":"${tag1value}", {"${tag2key}":"${tag2value}", "${tag3key}":"${tag3value}"}'
+                - tag1key: !FindInMap [RequiredTags, tag1, key]
+                  tag1value: !FindInMap [RequiredTags, tag1, value]
+                  tag2key: !FindInMap [RequiredTags, tag2, key]
+                  tag2value: !FindInMap [RequiredTags, tag2, value]
+                  tag3key: !FindInMap [RequiredTags, tag3, key]
+                  tag3value: !FindInMap [RequiredTags, tag3, value]
+        ConformancePackName:
+          StaticValue:
+            Values:
+              - Ref: ConformancePackName
+        ResourceID:
+          ResourceValue:
+            Value: 'RESOURCE_ID'
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - 'arn:aws:iam::084245194039:role/TagRemediationAutomationRole'
+      ExecutionControls:
+        SsmControls:
+          ConcurrentExecutionRatePercentage: 10
+          ErrorPercentage: 10
+      Automatic: True
+      MaximumAutomaticAttempts: 10
+      RetryAttemptSeconds: 600

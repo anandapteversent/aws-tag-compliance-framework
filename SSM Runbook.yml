@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This CloudFormation template creates the SSM runbook that remediates non-compliant resources checked by required-tags managed rule
+Resources:
+  SsmDocumentTagRemediation:
+    Type: AWS::SSM::Document
+    Properties:
+      Content:
+        description: |
+          ### Document Name - SSM-tag-remediation-automation
+
+          ## What does this document do?
+          This document adds the specified tags to the resources checked by the required-tags managed rule.
+
+          ## Input Parameters
+          * RequiredTags: (Required) StringMap of the tags to add to the resources.
+          * AutomationAssumeRole: (Optional) This document uses the role specified in the assumeRole parameter and will not use AutomationAssumeRole.
+          * ConformancePackName: Used to find detailed information about the non-compliant resource.
+
+          ## Output Parameters
+          * SetRequiredTags.SuccessfulResources: A list of the resources that were successfully tagged.
+          * SetRequiredTags.FailedResources: A mapList of the resources where tagging failed and the reason for the failure.
+        schemaVersion: '0.3'
+        assumeRole: 'arn:{{global:AWS_PARTITION}}:iam::{{global:ACCOUNT_ID}}:role/TagRemediationAutomationRole'
+        outputs:
+          - SetRequiredTags.SuccessfulResources
+          - SetRequiredTags.FailedResources
+        parameters:
+          RequiredTags:
+            type: StringMap
+            description: (Required) The tags to add to the resources.
+            displayType: textarea
+          ResourceID:
+            type: String
+            description: (Required) Non-compliant item ResourceID.
+            displayType: textarea
+          ConformancePackName:
+            type: String
+            description: (Required) Conformance Pack name passed to the automation.
+            displayType: textarea
+          AutomationAssumeRole:
+            type: String
+            description: (Optional) The ARN of the role that allows Automation to perform the actions on your behalf.
+            default: ''
+            allowedPattern: '^arn:aws(-cn|-us-gov)?:iam::\d{12}:role\/[\w+=,.@_\/-]+|^$'
+        mainSteps:
+          - name: SetRequiredTags
+            action: 'aws:executeScript'
+            description: |
+              ## SetRequiredTags
+              Adds the specified tags to uncompliant resources checked by required-tags managed rule.
+              ## Inputs
+              * RequiredTags: (StringMap) The tags to add to the resources.
+              ## Outputs
+              * SuccessfulResources: A list of the resources that were successfully tagged.
+              * FailedResources: A mapList of the resources where tagging failed and the reason for the failure.
+            onFailure: Abort
+            isCritical: true
+            timeoutSeconds: 600
+            isEnd: true
+            inputs:
+              Runtime: nodejs12.x
+              Handler: index.handler
+              InputPayload:
+                RequiredTags: '{{RequiredTags}}'
+                ResourceID: '{{ResourceID}}'
+                ConformancePackName: '{{ConformancePackName}}'
+              Script: |
+                'use strict';
+                const AWS = require('aws-sdk');
+
+                const setRequiredTags = async (resourcesArn, tags) => {
+                  const client = new AWS.ResourceGroupsTaggingAPI();
+                  const successesResources = [];
+                  const failedResources = [];
+
+                  for (const arn of resourcesArn) {
+                    try {
+                      await client.tagResources({ ResourceARNList: [arn], Tags: tags }).promise();
+                      successesResources.push(arn);
+                    } catch (error) {
+                      failedResources.push({ ResourceArn: arn, Error: error.message });
+                    }
+                  }
+
+                  return { SuccessfulResources: successesResources, FailedResources: failedResources };
+                };
+
+                const getConfigRuleName = async (prefix) => {
+                  const config = new AWS.Config();
+                  let configRuleName = '';
+
+                  try {
+                    const response = await config.describeConformancePacks().promise();
+                    for (const cp of response.ConformancePackDetails) {
+                      if (cp.ConformancePackName.includes(prefix)) {
+                        const ConformancePackId = cp.ConformancePackId;
+                        configRuleName = 'required-tags-' + ConformancePackId;
+                        break;
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error while getting config rule name:', error);
+                  }
+
+                  return configRuleName;
+                };
+
+                const setRequiredTagsHandler = async (event, context) => {
+                  console.log('Input event:', event);
+
+                  const { ResourceID, RequiredTags, ConformancePackName } = event;
+
+                  const resourcesArn = [];
+
+                  const config = new AWS.Config();
+
+                  try {
+                    const configRuleName = await getConfigRuleName(ConformancePackName);
+                    console.log('Config rule name:', configRuleName);
+
+                    let response = await config.getComplianceDetailsByConfigRule({
+                      ConfigRuleName: configRuleName,
+                      ComplianceTypes: ['NON_COMPLIANT'],
+                      Limit: 10,
+                    }).promise();
+
+                    const queryResult = response.EvaluationResults;
+                    for (const r of queryResult) {
+                      if (r.EvaluationResultIdentifier.EvaluationResultQualifier.ResourceId === ResourceID) {
+                        const resourceType = r.EvaluationResultIdentifier.EvaluationResultQualifier.ResourceType;
+                        break;
+                      }
+                    }
+
+                    while (response.NextToken) {
+                      try {
+                        response = await config.getComplianceDetailsByConfigRule({
+                          ConfigRuleName: configRuleName,
+                          ComplianceTypes: ['NON_COMPLIANT'],
+                          Limit: 10,
+                          NextToken: response.NextToken,
+                        }).promise();
+
+                        const queryResult = response.EvaluationResults;
+                        for (const r of queryResult) {
+                          if (r.EvaluationResultIdentifier.EvaluationResultQualifier.ResourceId === ResourceID) {
+                            const resourceType = r.EvaluationResultIdentifier.EvaluationResultQualifier.ResourceType;
+                            break;
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error while fetching compliance details:', error);
+                      }
+                    }
+
+                    const response = await config.batchGetResourceConfig({
+                      resourceKeys: [
+                        { resourceType: resourceType, resourceId: ResourceID },
+                      ],
+                    }).promise();
+
+                    for (const item of response.baseConfigurationItems) {
+                      resourcesArn.push(item.arn);
+                    }
+                  } catch (error) {
+                    console.error('Error while processing resource:', error);
+                  }
+
+                  const result = await setRequiredTags(resourcesArn, RequiredTags);
+                  console.log('Output result:', result);
+                  return result;
+                };
+
+                exports.handler = setRequiredTagsHandler;
+      DocumentFormat: YAML
+      DocumentType: Automation
+      Name: 'SsmDocumentTagRemediation'

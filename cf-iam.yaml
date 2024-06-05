@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This CloudFormation template creates IAM role which can be assumed by the SSM runbook with the permission to tag resources
+Resources:
+  TagRemediationAutomationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: role for tag remediation automation
+      RoleName: TagRemediationAutomationRole
+
+  TagRemediationAutomationPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'config:GetComplianceDetailsByConfigRule'
+              - 'config:DescribeConformancePacks'
+              - 'config:BatchGetResourceConfig'
+              - 'tag:GetResources'
+              - 'tag:GetTagKeys'
+              - 'tag:GetTagValues'
+              - 'tag:TagResources'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ec2:CreateTags'
+              - 's3:PutBucketTagging'
+              - 'rds:AddTagsToResource'
+              - 'dynamodb:TagResource'
+              - 'lambda:TagResource'
+              - 'redshift:CreateTags'
+              - 'elasticloadbalancing:AddTags'
+              - 'elasticloadbalancing:CreateTags'
+              - 'ecs:TagResource'
+              - 'emr:AddTags'
+              - 'sns:TagResource'
+              - 'sqs:TagQueue'
+              - 'ssm:AddTagsToResource'
+              - 'kinesis:AddTagsToStream'
+              - 'apigateway:TagResource'
+              - 'cloudformation:TagResource'
+              - 'cloudwatch:TagResource'
+              - 'codebuild:CreateTags'
+              - 'codepipeline:TagResource'
+              - 'efs:TagResource'
+              - 'kafka:TagResource'
+              - 'states:TagResource'
+              - 'secretsmanager:TagResource'
+              - 'servicecatalog:AddTags'
+              - 'cloudfront:TagResource'
+              - 'globalaccelerator:AddTags'
+              - 'sagemaker:AddTags'
+              - 'acm:AddTagsToCertificate'
+              - 'shield:AddTagsToResource'
+              - 'waf:CreateTags'
+              - 'waf-regional:CreateTags'
+              - 'xray:TagResource'
+              - 'backup:TagResource'
+              - 'ecr:TagResource'
+              - 'guardduty:TagResource'
+              - 'ec2:TagHost'
+              - 'ec2:CreateTags'
+              - 'iam:TagRole'
+              - 'kms:TagResource'
+              - 'qldb:TagResource'
+              - 'ram:TagResource'
+              - 'sns:TagResource'
+              - 'sqs:TagQueue'
+            Resource: '*'
+      PolicyName: TagRemediationAutomationPolicy
+      Roles:
+        - !Ref TagRemediationAutomationRole
+
+Outputs:
+  RoleName:
+    Description: Name of Created IAM Role
+    Value: !Ref TagRemediationAutomationRole
+  RoleArn:
+    Description: Arn of Created Role
+    Value: !GetAtt TagRemediationAutomationRole.Arn
