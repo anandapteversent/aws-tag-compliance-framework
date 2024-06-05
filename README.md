@@ -21,9 +21,9 @@
 - Choose Create.
 
 # Pre-Requisites to go in the code
-  - AWS Orgniztions Management Account ID
-  - A list of member account IDs that are needed to be excluded from the solution.
-  - S3 Bucket in Management account which will be used to hold the conformance pack template.
+    - AWS Orgniztions Management Account ID
+    - A list of member account IDs that are needed to be excluded from the solution.
+    - S3 Bucket in Management account which will be used to hold the conformance pack template.
 
 
 # Step 1 - Deploy the IAM role through CloudFormation
@@ -31,22 +31,22 @@
     - Do it again for the members account using Stacks.
 
 # Step 2 - Create the Automation runbook for the remediation action and share the runbook with the member accounts.
- -  Deploy CloudFormation Stacks - cf-automation-runbook.yaml
+    -  Deploy CloudFormation Stacks - cf-automation-runbook.yaml
 
 # Step 3 - After the automation runbook is created in Step 2, share it with member accounts.
-- In the management account open the AWS Systems Manager Console, and choose documents.
-- Choose Owned by me and select SsmDocumentTagRemediation created in the previous step.
-- Select Details tab and add accounts where you need to share this runbook.
+    - In the management account open the AWS Systems Manager Console, and choose documents.
+    - Choose Owned by me and select SsmDocumentTagRemediation created in the previous step.
+    - Select Details tab and add accounts where you need to share this runbook.
 
 # Step 4 - Deploy the conformance pack in the management account 
- - Create Conformance Pack template - cf-conformancepack-doc-map.yaml
- - Change conformance pack name - Line 19-22.
- - Change require tag / value pair - line 23-27 (add all 3 tags).
- - replace management ID in the template.
- - Upload to an S3 bucket in the management account.
+    - Create Conformance Pack template - cf-conformancepack-doc-map.yaml
+    - Change conformance pack name - Line 19-22.
+    - Change require tag / value pair - line 23-27 (add all 3 tags).
+    - replace management ID in the template.
+    - Upload to an S3 bucket in the management account.
 
 # Step 5 - Deploy the conformance pack as an organization conformance pack through Cloud Formation. 
-- Modify Excluded Accounts - (modify this based on which accounts you want to do in which change window)
-- Modify TemplateS3Uri on line 31.
+    - Modify Excluded Accounts - (modify this based on which accounts you want to do in which change window)
+    - Modify TemplateS3Uri on line 31.
 
 
