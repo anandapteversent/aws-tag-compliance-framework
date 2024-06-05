@@ -1,2 +1,0 @@
-Management Account ID - 084245194039
-IAM Role name for members accounts - TaggingRemediationIamRoleMembersAccounts
