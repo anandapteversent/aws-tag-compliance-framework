@@ -10,10 +10,10 @@ Mappings:
       key: businessOwner
       value: anand.apte
     tag2: 
-      Key: userName
+      key: userName
       value: anand.apte  
     tag3: 
-      Key: businessEntity
+      key: businessEntity
       value: test  
 
 Resources:
