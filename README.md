@@ -20,10 +20,27 @@
   - In the Target OUs section, select the check boxes of the OUs and Regions where you want to use AWS Config recording.
 - Choose Create.
 
-# Pre-Requisites to go in the code
+- # Pre-Requisites to go in the code
     - AWS Orgniztions Management Account ID
     - A list of member account IDs that are needed to be excluded from the solution.
     - S3 Bucket in Management account which will be used to hold the conformance pack template.
+    - Applicable Tag values created as the JSON file (tags.json), like below (replacing the appropriate accountNo and adding appropriate tags)
+
+        [
+            {
+                "accountNo": "XXXXXXXXXXXXX",
+                "Ops:ApplicationName": "ABC-DEF",
+                "Bus:BusinessOwner": "abc.xyz",
+                "Environment": "QA"
+             },
+            {
+                "accountNo": "YYYYYYYYYYYY",
+                "Ops:ApplicationName": "ABC-DEF",
+                "Bus:BusinessOwner": "def.xyz",
+                "Environment": "Test",
+            }]
+
+A list of member account IDs which are to be excluded from the deployment.
 
 
 # Step 1 - Deploy the IAM role through CloudFormation
