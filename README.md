@@ -58,7 +58,7 @@ A list of member account IDs which are to be excluded from the deployment.
 # Step 4 - Deploy the conformance pack in the management account 
     - Create Conformance Pack template - cf-conformancepack-doc-map.yaml
     - Change conformance pack name - Line 19-22.
-    - Change require tag / value pair - line 23-27 (add all 3 tags).
+    - change the <REGION> and <ACCOUNT> based on your requirement.
     - replace management ID in the template.
     - Upload to an S3 bucket in the management account.
 
