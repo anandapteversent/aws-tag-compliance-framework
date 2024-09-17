@@ -1,21 +1,24 @@
 Parameters:
   ConformancePackName:
     Description: The name intented to use when creating the organization conformance pack.
-    Default: 'TagRemediationConformancePack'
+    Default: 'TagRemediationConfPack'
     Type: String
-
-Mappings:
-  RequiredTags:
-    tag1:
-      key: businessOwner
-      value: anand.apte
-    tag2: 
-      key: userName
-      value: anand.apte  
-    tag3: 
-      key: businessEntity
-      value: test  
-
+  tag1Key:
+    Description: Flag to denote that the tag is applied by the AWS Config and Conformance Pack.
+    Type: String
+    Default: TagAppliedByConfig
+  tag1Value: 
+    Description: Falg value to denote that the tag is applied by the AWS Config and Conformance Pack.
+    Type: String
+    Default: 'True'
+  S3Bucket:
+    Description: s3 Bucket where tag values are stored.
+    Type: String
+    Default: tstcontmpl
+  TagJson: 
+    Description: JSON string input for all the Tags.
+    Type: String
+    Default: 'test'
 Resources:
   ResourceTaggingCheck:
     Type: AWS::Config::ConfigRule
@@ -26,96 +29,68 @@ Resources:
         Owner: AWS
         SourceIdentifier: REQUIRED_TAGS
       InputParameters:
-        tag1Key: !FindInMap [RequiredTags, tag1, key]
-        tag1Value: !FindInMap [RequiredTags, tag1, value]
-        tag2Key: !FindInMap [RequiredTags, tag2, key]
-        tag2Value: !FindInMap [RequiredTags, tag2, value]
-        tag3Key: !FindInMap [RequiredTags, tag3, key]
-        tag3Value: !FindInMap [RequiredTags, tag3, value]
+        tag1Key: !Ref tag1Key
+        tag1Value: !Ref tag1Value
       Scope:
         ComplianceResourceTypes:
+          - AWS::ACM::Certificate
+          - AWS::AutoScaling::AutoScalingGroup
+          - AWS::CloudFormation::Stack 
+          - AWS::CodeBuild::Project
+          - AWS::DynamoDB::Table 
+          - AWS::EC2::CustomerGateway 
           - AWS::EC2::Instance
-          - AWS::S3::Bucket
-          - AWS::RDS::DBInstance
-          - AWS::DynamoDB::Table
-          - AWS::Lambda::Function
-          - AWS::Redshift::Cluster
-          - AWS::EBS::Volume
+          - AWS::EC2::InternetGateway
+          - AWS::EC2::NetworkAcl
+          - AWS::EC2::NetworkInterface
+          - AWS::EC2::RouteTable
+          - AWS::EC2::SecurityGroup
+          - AWS::EC2::Subnet
+          - AWS::EC2::Volume
+          - AWS::EC2::VPC
+          - AWS::EC2::VPNConnection
+          - AWS::EC2::VPNGateway
           - AWS::ElasticLoadBalancing::LoadBalancer
           - AWS::ElasticLoadBalancingV2::LoadBalancer
-          - AWS::ECS::Cluster
-          - AWS::ECS::Service
-          - AWS::ECS::TaskDefinition
-          - AWS::EMR::Cluster
-          - AWS::SNS::Topic
-          - AWS::SQS::Queue
-          - AWS::SSM::ManagedInstanceInventory
-          - AWS::Kinesis::Stream
-          - AWS::ApiGateway::RestApi
-          - AWS::CloudFormation::Stack
-          - AWS::CloudWatch::Alarm
-          - AWS::CodeBuild::Project
-          - AWS::CodePipeline::Pipeline
-          - AWS::EFS::FileSystem
-          - AWS::MSK::Cluster
-          - AWS::StepFunctions::Activity
-          - AWS::StepFunctions::StateMachine
-          - AWS::SecretsManager::Secret
-          - AWS::ServiceCatalog::CloudFormationProvisionedProduct
-          - AWS::ServiceCatalog::CloudFormationProduct
-          - AWS::ServiceCatalog::Portfolio
-          - AWS::CloudFront::Distribution
-          - AWS::GlobalAccelerator::Accelerator
-          - AWS::GlobalAccelerator::EndpointGroup
-          - AWS::GlobalAccelerator::Listener
-          - AWS::SageMaker::NotebookInstance
-          - AWS::CertificateManager::Certificate
-          - AWS::Shield::Protection
-          - AWS::WAF::RateBasedRule
-          - AWS::WAF::Rule
-          - AWS::WAF::RuleGroup
-          - AWS::WAF::WebACL
-          - AWS::WAFRegional::RateBasedRule
-          - AWS::WAFRegional::Rule
-          - AWS::WAFRegional::RuleGroup
-          - AWS::WAFRegional::WebACL
-          - AWS::XRay::EncryptionConfig
-          - AWS::Backup::BackupPlan
-          - AWS::Backup::BackupSelection
-          - AWS::Backup::BackupVault
-          - AWS::Backup::RecoveryPoint
-          - AWS::ECR::Repository
-          - AWS::GuardDuty::Detector
-          - AWS::GuardDuty::IPSet
-          - AWS::GuardDuty::ThreatIntelSet
-          - AWS::EC2::Host
-          - AWS::EC2::SecurityGroup
-          - AWS::IAM::Role
-          - AWS::KMS::Key
-          - AWS::QLDB::Ledger
-          - AWS::RAM::ResourceShare
-          - AWS::SNS::Topic
-          - AWS::SQS::Queue
+          - AWS::RDS::DBInstance
+          - AWS::RDS::DBSecurityGroup
+          - AWS::RDS::DBSnapshot
+          - AWS::RDS::DBSubnetGroup
+          - AWS::RDS::EventSubscription
+          - AWS::Redshift::Cluster
+          - AWS::Redshift::ClusterParameterGroup
+          - AWS::Redshift::ClusterSecurityGroup
+          - AWS::Redshift::ClusterSnapshot
+          - AWS::Redshift::ClusterSubnetGroup
+          - AWS::S3::Bucket
 
   MapTaggingRemediation:
     DependsOn: ResourceTaggingCheck
     Type: 'AWS::Config::RemediationConfiguration'
     Properties:
       ConfigRuleName: required-tags
-      TargetId: !Sub 'arn:${AWS::Partition}:ssm:ap-southeast-2:084245194039:document/SsmDocumentTagRemediation'
+      TargetId: !Sub 'arn:aws:ssm:a<REGION>:<ACCOUNT>:document/SsmDocumentTagRemediation'
       TargetType: 'SSM_DOCUMENT'
       Parameters:
         RequiredTags:
           StaticValue:
             Values:
-              - !Sub
-                - '{"${tag1key}":"${tag1value}", {"${tag2key}":"${tag2value}", "${tag3key}":"${tag3value}"}'
-                - tag1key: !FindInMap [RequiredTags, tag1, key]
-                  tag1value: !FindInMap [RequiredTags, tag1, value]
-                  tag2key: !FindInMap [RequiredTags, tag2, key]
-                  tag2value: !FindInMap [RequiredTags, tag2, value]
-                  tag3key: !FindInMap [RequiredTags, tag3, key]
-                  tag3value: !FindInMap [RequiredTags, tag3, value]
+              - !Sub 
+                - '{"${tag1Key}": "${tag1Value}"}'
+                - tag1Key: !Ref tag1Key
+                  tag1Value: !Ref tag1Value
+        AccountID:
+          StaticValue:
+            Values:
+              - !Sub '${AWS::AccountId}'          
+        S3Bucket:
+          StaticValue:
+            Values:
+              - Ref: S3Bucket
+        TagJson: 
+          StaticValue:
+            Values:
+              - Ref: TagJson
         ConformancePackName:
           StaticValue:
             Values:
@@ -126,7 +101,7 @@ Resources:
         AutomationAssumeRole:
           StaticValue:
             Values:
-              - 'arn:aws:iam::084245194039:role/TagRemediationAutomationRole'
+              - 'arn:aws:iam::<REGION>:role/TagRemediationAutomationRole'
       ExecutionControls:
         SsmControls:
           ConcurrentExecutionRatePercentage: 10
