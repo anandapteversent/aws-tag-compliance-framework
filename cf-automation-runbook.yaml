@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: This CloudFormation template creates the SSM runbook that remediate the non-compliant resource checked by required-tags managed rule
+Description: This CloudFormation template creates the SSM runbook that remediates the non-compliant resource checked by the required-tags managed rule.
 Resources:
   SsmDocumentTagRemediation:
     Type: AWS::SSM::Document
@@ -12,13 +12,13 @@ Resources:
           This document adds the specified tags to the resource checked by required-tags managed rule.
 
           ## Input Parameters
-          * RequiredTags: (Required) StringMap of the tags to add to the resources.
-          * AutomationAssumeRole: (Optional) This document use the role specified in assumeRole parameter, will not use AutomationAssumeRole
-          * ConformancePackName: used to find the detail info of the non compliant resource
+          * TagJson: (Required) JSON array of objects with account-specific tags.
+          * AutomationAssumeRole: (Optional) This document uses the role specified in assumeRole parameter, will not use AutomationAssumeRole.
+          * ConformancePackName: Used to find the detail info of the non-compliant resource.
 
           ## Output Parameters
           * SetRequiredTags.SuccessfulResources: A list of the resources that were successfully tagged.
-          * SetRequiredTags.FailedResources : A mapList of the resources where tagging failed and the reason for the failure.
+          * SetRequiredTags.FailedResources: A mapList of the resources where tagging failed and the reason for the failure.
         schemaVersion: '0.3'
         assumeRole: 'arn:{{global:AWS_PARTITION}}:iam::{{global:ACCOUNT_ID}}:role/TagRemediationAutomationRole'
         outputs:
@@ -29,27 +29,39 @@ Resources:
             type: StringMap
             description: (Required) The tags to add to the resources.
             displayType: textarea
+          TagJson:
+            type: String
+            description: (Required) The JSON array of account-specific tags.
+            displayType: textarea
+          S3Bucket:
+            type: String
+            description: (Required) The S3 Bucket where tag values will be stored.
+            displayType: textarea  
           ResourceID:
             type: String
-            description: (Required) non-compliant item ResourceID.
+            description: (Required) Non-compliant item ResourceID.
+            displayType: textarea
+          AccountID: 
+            type: String
+            description: The AWS Account ID.
             displayType: textarea
           ConformancePackName:
             type: String
-            description: (Required) Conformance Pack name pass to the automation.
+            description: (Required) Conformance Pack name passed to the automation.
             displayType: textarea
           AutomationAssumeRole:
             type: String
             description: (Optional) The ARN of the role that allows Automation to perform the actions on your behalf.
             default: ''
-            allowedPattern: '^arn:aws(-cn|-us-gov)?:iam::\d{12}:role\/[\w+=,.@_\/-]+|^$'
+            allowedPattern: '^arn:aws(-cn|-us-gov)?:iam::\d{12}:role/[\w+=,.@_\/-]+|^$'
         mainSteps:
           - name: SetRequiredTags
             action: 'aws:executeScript'
             description: |
               ## SetRequiredTags
-              Adds the specified tags to uncompliant resource checked by required-tags managed rule.
+              Adds the specified tags to non-compliant resources checked by the required-tags managed rule.
               ## Inputs
-              * RequiredTags: (StringMap) The tags to add to the resources.
+              * TagJson: (String) The JSON array of account-specific tags.
               ## Outputs
               * SuccessfulResources: A list of the resources that were successfully tagged.
               * FailedResources: A mapList of the resources where tagging failed and the reason for the failure.
@@ -58,39 +70,177 @@ Resources:
             timeoutSeconds: 600
             isEnd: true
             inputs:
-              Runtime: python3.7
+              Runtime: python3.11
               Handler: set_required_tags_handler
               InputPayload:
                 RequiredTags: '{{RequiredTags}}'
                 ResourceID: '{{ResourceID}}'
                 ConformancePackName: '{{ConformancePackName}}'
+                AccountID: '{{AccountID}}'
+                TagJson: '{{TagJson}}'
+                S3Bucket: '{{S3Bucket}}'
               Script: |
                 import json
                 import boto3
 
-                def set_required_tags(resourcesArn,tags):
-                  client = boto3.client('resourcegroupstaggingapi')
+                def read_tag_values(s3Bucket, fileName): 
+                  s3 = boto3.resource('s3')
+                  obj = s3.Object(s3Bucket, fileName)
+                  try: 
+                    data = obj.get()['Body'].read()
+                    data_str = data.decode('utf-8')
+                    print('printing tag data from function')
+                    print(data)
+                    print('printing tag data_str from function')
+                    print(data_str)
+                    data_json = json.loads(data_str)
+                    print('printing tag data_json from function')
+                    print(data_json)
+                    return data_json
+                  except Exception as e:
+                    print(e)
+                    return e
 
-                  successesResources = []
-                  FailedResources = []
+                def tag_ecs_resources(tags): 
+                  client = boto3.client('ecs')
+                  success = []
+                  failed = []
+                  print('inside ECS tagging function')
 
-                  for arn in resourcesArn:
+                  try:
+                    clusters = client.list_clusters()['clusterArns']
+                    for cluster_arn in clusters: 
                       try:
-                          response = client.tag_resources(ResourceARNList = [arn], Tags = tags)
-                          successesResources.append(arn)
-
+                        print('inside first try - cluster found')
+                        success.append(cluster_arn)
+                        services = client.list_services(cluster=cluster_arn)['serviceArns']
+                        for service_arn in services:
+                          try:
+                            success.append(service_arn)
+                          except Exception as e:
+                            failed.append({'ResourceArn': service_arn, 'error': str(e)})
+                        tasks = client.list_tasks(cluster=cluster_arn)['taskArns']
+                        for task_arn in tasks:
+                          try: 
+                            success.append(task_arn)
+                          except Exception as e:
+                            failed.append({'ResourceArn': task_arn, 'error': str(e)})
+                        container_instances = client.list_container_instances(cluster=cluster_arn)['containerInstanceArns']
+                        for container_instance_arn in container_instances:
+                          try:
+                            success.append(container_instance_arn)    
+                          except Exception as e:
+                            failed.append({'ResourceArn': container_instance_arn, 'error': str(e)})
                       except Exception as e:
-                        errorMsg = str(e)
-                        FailedResources.append({'ResourceArn': arn , 'error': errorMsg})
+                        failed.append({'ResourceArn': cluster_arn, 'error': str(e)})
+                      print('inside tag try - cluster tagged')
+                    for resource_arn in success:
+                      try:
+                        client.tag_resource(resourceArn=resource_arn, tags=tags)
+                        print('inside tag try - cluster tagged')
+                      except Exception as e:
+                        failed.append({'ResourceArn': resource_arn, 'error': str(e)})
+                  except Exception as e:
+                    failed.append({'ResourceArn': 'none', 'error': str(e)})
 
-                  out = {
-                      'SuccessesResources': successesResources,
-                      'FailedResources': FailedResources
-                  }
-                  return out
+                  return {'SuccessResources': success, 'FailedResources': failed}  
+
+                def tag_efs_resources(tags):
+                  client = boto3.client('efs')
+                  success = []
+                  failed = []
+
+                  try:
+                    filesystems = client.describe_file_systems()['FileSystems']
+                    for filesystem in filesystems:
+                      try:
+                        success.append(filesystem['FileSystemId'])
+                        client.tag_resource(ResourceId=filesystem['FileSystemId'], Tags=tags)
+                      except Exception as e:
+                        failed.append({'ResourceArn': filesystem['FileSystemId'], 'error': str(e)})
+                  except Exception as e:
+                    failed.append({'ResourceArn': 'none', 'error': str(e)})
+
+                  return {'SuccessResources': success, 'FailedResources': failed}  
+
+                def tag_opensearch_resources(tags): 
+                  client = boto3.client('opensearch')
+                  success = []
+                  failed = []
+
+                  try:
+                    domain_names = client.list_domain_names()['DomainNames']
+                    for domain_name in domain_names:
+                      try:
+                        domain_arn = client.describe_domain(DomainName=domain_name['DomainName'])['DomainStatus']['ARN']
+                        success.append(domain_arn)
+                        client.add_tags(ARN=domain_arn, TagList=tags)
+                      except Exception as e:
+                        failed.append({'ResourceArn': domain_arn, 'error': str(e)})
+                  except Exception as e:
+                    failed.append({'ResourceArn': 'none', 'error': str(e)})
+
+                  return {'SuccessResources': success, 'FailedResources': failed}  
+
+                def tag_cloudfront_resources(tags): 
+                  client = boto3.client('cloudfront')
+                  success = []
+                  failed = []
+
+                  try:
+                    distribution_items = client.list_distributions()['DistributionList']['Items']
+                    for distribution_item in distribution_items:
+                      try:
+                        success.append(distribution_item['ARN'])
+                        client.tag_resource(Resource=distribution_item['ARN'], Tags=tags)
+                      except Exception as e:
+                        failed.append({'ResourceArn': distribution_item['ARN'], 'error': str(e)})
+                  except Exception as e:
+                    failed.append({'ResourceArn': 'none', 'error': str(e)})
+
+                  return {'SuccessResources': success, 'FailedResources': failed}  
+
+                def tag_waf_resources(tags):
+                  client = boto3.client('wafv2')
+                  success = []
+                  failed = []
+
+                  for scope in ['REGIONAL', 'CLOUDFRONT']:
+                    try:
+                      if scope == 'CLOUDFRONT':
+                        client = boto3.client('wafv2', region_name='us-east-1')
+                      else:
+                        client = boto3.client('wafv2')  
+                      waf_web_acls = client.list_web_acls(Scope=scope)['WebACLs']
+                      for web_acl in waf_web_acls:
+                        try:
+                          success.append(web_acl['ARN'])
+                          client.tag_resource(ResourceARN=web_acl['ARN'], Tags=tags)
+                        except Exception as e:
+                          failed.append({'ResourceArn': web_acl['ARN'], 'error': str(e)})
+                    except Exception as e:
+                      failed.append({'ResourceArn': 'none', 'error': str(e)})
+
+                  return {'SuccessResources': success, 'FailedResources': failed}  
+
+                def set_required_tags(resourcesArn, tags):
+                    client = boto3.client('resourcegroupstaggingapi')
+                    successResources = []
+                    failedResources = []
+
+                    for arn in resourcesArn:
+                        try:
+                            response = client.tag_resources(ResourceARNList=[arn], Tags=tags)
+                            successResources.append(arn)
+                        except Exception as e:
+                            errorMsg = str(e)
+                            failedResources.append({'ResourceArn': arn, 'error': errorMsg})
+
+                    return {'SuccessResources': successResources, 'FailedResources': failedResources}
 
                 def get_config_rule_name(prefix):
                     client = boto3.client('config')
+                    ConformancePackId = ''
                     config_rule_name = ''
 
                     try:
@@ -98,63 +248,83 @@ Resources:
                         for cp in response['ConformancePackDetails']:
                             if prefix+'-' in cp['ConformancePackName']:
                                 ConformancePackId = cp['ConformancePackId']
-                                exit
+                                break
                     except Exception as e:
                         errorMsg = str(e)
                         print(errorMsg)
 
-                    config_rule_name = 'required-tags-'+ConformancePackId
+                    config_rule_name = 'required-tags-' + ConformancePackId
                     return config_rule_name
-
 
                 def set_required_tags_handler(event, context):
                     print(event)
-                    print(event['ResourceID'])
-                    print(event['RequiredTags'])
 
                     ResourceID = event['ResourceID']
-                    tags = event['RequiredTags']
+                    TagJson = event['TagJson']
                     ConformancePackName = event['ConformancePackName']
+                    AccountID = event['AccountID']
+                    s3Bucket = event['S3Bucket']
 
+                    print('printing TagJson')
+                    print(TagJson)
+
+                    # Parse TagJson
+                    tag_json = json.loads(TagJson)
+
+                    print('printing tag_json')
+                    print(tag_json)
+                    
+                    print('printing s3 bucket name')
+                    print(s3Bucket)
+
+                    contents = read_tag_values(s3Bucket, 'tags.json')
+                    if not contents:
+                        raise Exception(f"No tags found for account ID {AccountID}")
+
+                    print('printing contents from the main function - line 275')
+                    print(contents)
+
+                    # Find the tags for the current account
+                    tags = next((x for x in contents if x['accountNo'] == AccountID), None)
+                    if not tags:
+                        raise Exception(f"No tags found for account ID {AccountID}")
+
+                    print('printing tags now')
+                    print(tags)
 
                     resourcesArn = []
-
+                    resource_type = None
                     config_client = boto3.client('config')
 
-                    #obtain the rule name to match the resourceID
-                    #conformance_pack_name = 'required-tags-conformance-pack'
+                    # Obtain the rule name to match the ResourceID
                     config_rule_name = get_config_rule_name(ConformancePackName)
                     print(config_rule_name)
 
-                    #query non complaint resources in the rule to find the resourceID match and getting the resource_type
+                    # Query non-compliant resources in the rule to find the ResourceID match and getting the resource_type
                     try:
                         response = config_client.get_compliance_details_by_config_rule(
                             ConfigRuleName=config_rule_name,
                             ComplianceTypes=['NON_COMPLIANT'],
-                            Limit = 10
+                            Limit=10
                         )
                     except Exception as e:
                         errorMsg = str(e)
                         print(errorMsg)
 
-
                     query_result = response['EvaluationResults']
                     for r in query_result:
                         if r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId'] == ResourceID:
-                            print(r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceType'])
-                            print(r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId'])
                             resource_type = r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceType']
                             resource_id = r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId']
                             break
 
                     while 'NextToken' in response:
-                        print(response['NextToken'])
                         try:
                             response = config_client.get_compliance_details_by_config_rule(
                                 ConfigRuleName=config_rule_name,
                                 ComplianceTypes=['NON_COMPLIANT'],
-                                Limit = 10,
-                                NextToken = response['NextToken']
+                                Limit=10,
+                                NextToken=response['NextToken']
                             )
                         except Exception as e:
                             errorMsg = str(e)
@@ -165,33 +335,40 @@ Resources:
                             if r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId'] == ResourceID:
                                 resource_type = r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceType']
                                 resource_id = r['EvaluationResultIdentifier']['EvaluationResultQualifier']['ResourceId']
-                                print(resource_type)
-                                print(resource_id)
                                 break
 
-                    #use the resource type and resource ID to find the ARN
+                    if not resource_type:
+                        raise Exception(f"Resource ID {ResourceID} not found in any non-compliant results.")
+
+                    # Use the resource type and ResourceID to find the ARN
                     response = config_client.batch_get_resource_config(
                         resourceKeys=[
                             {
                                 'resourceType': resource_type,
-                                'resourceId': resource_id
-                            },
+                                'resourceId': ResourceID
+                            }
                         ]
                     )
 
-                    configurationItems = response['baseConfigurationItems']
+                    resources = response.get('baseConfigurationItems', [])
+                    if not resources:
+                        raise Exception(f"No resource found with Resource ID {ResourceID} and type {resource_type}")
+                    resourceArn = resources[0]['arn']
+                    resourcesArn.append(resourceArn)
 
-                    for item in configurationItems:
-                        resourcesArn.append(item['arn'])
-                        print(item['arn'])
-
-                    #tag the resource
-                    out = (set_required_tags(resourcesArn,tags))
+                    # Add tags based on resource type
+                    out = []
+                    out.append(set_required_tags(resourcesArn, tags))
+                    formatted_tags = [{'key': k, 'value': v} for k, v in tags.items()]
+                    out.append(tag_ecs_resources(formatted_tags))
+                    out.append(tag_efs_resources([{'Key': k, 'Value': v} for k, v in tags.items()]))
+                    out.append(tag_opensearch_resources([{'Key': k, 'Value': v} for k, v in tags.items()]))
+                    out.append(tag_cloudfront_resources([{'Key': k, 'Value': v} for k, v in tags.items()]))
+                    out.append(tag_waf_resources([{'Key': k, 'Value': v} for k, v in tags.items()]))
                     return out
-
             outputs:
               - Name: SuccessfulResources
-                Selector: $.Payload.SuccessesResources
+                Selector: $.Payload.SuccessResources
                 Type: StringList
               - Name: FailedResources
                 Selector: $.Payload.FailedResources
